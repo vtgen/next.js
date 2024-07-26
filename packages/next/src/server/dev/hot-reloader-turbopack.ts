@@ -157,6 +157,7 @@ export async function createHotReloaderTurbopack(
   opts.onCleanup(() => project.onExit())
   const entrypointsSubscription = project.entrypointsSubscribe()
 
+  const currentWrittenEntrypoints: Map<EntryKey, WrittenEndpoint> = new Map()
   const currentEntrypoints: Entrypoints = {
     global: {
       app: undefined,
@@ -193,35 +194,44 @@ export async function createHotReloaderTurbopack(
 
   function clearRequireCache(
     key: EntryKey,
-    writtenEndpoint: WrittenEndpoint
+    writtenEndpoint: WrittenEndpoint,
+    {
+      force,
+    }: {
+      // Always clear the cache, don't check if files have changed
+      force?: boolean
+    } = {}
   ): void {
-    // Figure out if the server files have changed
-    let hasChange = false
-    for (const { path, contentHash } of writtenEndpoint.serverPaths) {
-      // We ignore source maps
-      if (path.endsWith('.map')) continue
-      const localKey = `${key}:${path}`
-      const localHash = serverPathState.get(localKey)
-      const globalHash = serverPathState.get(path)
-      if (
-        (localHash && localHash !== contentHash) ||
-        (globalHash && globalHash !== contentHash)
-      ) {
-        hasChange = true
-        serverPathState.set(key, contentHash)
-        serverPathState.set(path, contentHash)
-      } else {
-        if (!localHash) {
+    if (!force) {
+      // Figure out if the server files have changed
+      let hasChange = false
+      for (const { path, contentHash } of writtenEndpoint.serverPaths) {
+        // We ignore source maps
+        if (path.endsWith('.map')) continue
+        const localKey = `${key}:${path}`
+        const localHash = serverPathState.get(localKey)
+        const globalHash = serverPathState.get(path)
+        if (
+          (localHash && localHash !== contentHash) ||
+          (globalHash && globalHash !== contentHash)
+        ) {
+          hasChange = true
           serverPathState.set(key, contentHash)
-        }
-        if (!globalHash) {
           serverPathState.set(path, contentHash)
+        } else {
+          if (!localHash) {
+            serverPathState.set(key, contentHash)
+          }
+          if (!globalHash) {
+            serverPathState.set(path, contentHash)
+          }
         }
       }
-    }
 
-    if (!hasChange) {
-      return
+      if (!hasChange) {
+        console.log('returning early')
+        return
+      }
     }
 
     const hasAppPaths = writtenEndpoint.serverPaths.some(({ path: p }) =>
@@ -477,6 +487,7 @@ export async function createHotReloaderTurbopack(
 
           hooks: {
             handleWrittenEndpoint: (id, result) => {
+              currentWrittenEntrypoints.set(id, result)
               clearRequireCache(id, result)
             },
             propagateServerField: propagateServerField.bind(null, opts),
@@ -750,10 +761,14 @@ export async function createHotReloaderTurbopack(
       return errors
     },
     async invalidate({
-      // .env files or tsconfig/jsconfig change
+      // .env files kr tsconfig/jsconfig change
       reloadAfterInvalidation,
     }) {
       if (reloadAfterInvalidation) {
+        for (const [key, entrypoint] of currentWrittenEntrypoints) {
+          clearRequireCache(key, entrypoint, { force: true })
+        }
+
         await clearAllModuleContexts()
         this.send({
           action: HMR_ACTIONS_SENT_TO_BROWSER.SERVER_COMPONENT_CHANGES,
@@ -822,6 +837,7 @@ export async function createHotReloaderTurbopack(
               subscribeToChanges,
               handleWrittenEndpoint: (id, result) => {
                 clearRequireCache(id, result)
+                currentWrittenEntrypoints.set(id, result)
                 assetMapper.setPathsForKey(id, result.clientPaths)
               },
             },
@@ -879,6 +895,7 @@ export async function createHotReloaderTurbopack(
           hooks: {
             subscribeToChanges,
             handleWrittenEndpoint: (id, result) => {
+              currentWrittenEntrypoints.set(id, result)
               clearRequireCache(id, result)
               assetMapper.setPathsForKey(id, result.clientPaths)
             },
