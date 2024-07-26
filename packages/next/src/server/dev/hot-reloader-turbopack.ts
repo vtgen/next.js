@@ -202,7 +202,9 @@ export async function createHotReloaderTurbopack(
       force?: boolean
     } = {}
   ): void {
-    if (!force) {
+    if (force) {
+      serverPathState.clear()
+    } else {
       // Figure out if the server files have changed
       let hasChange = false
       for (const { path, contentHash } of writtenEndpoint.serverPaths) {
@@ -761,7 +763,7 @@ export async function createHotReloaderTurbopack(
       return errors
     },
     async invalidate({
-      // .env files kr tsconfig/jsconfig change
+      // .env files or tsconfig/jsconfig change
       reloadAfterInvalidation,
     }) {
       if (reloadAfterInvalidation) {
