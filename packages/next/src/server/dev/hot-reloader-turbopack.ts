@@ -231,7 +231,6 @@ export async function createHotReloaderTurbopack(
       }
 
       if (!hasChange) {
-        console.log('returning early')
         return
       }
     }
