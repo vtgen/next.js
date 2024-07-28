@@ -85,7 +85,7 @@ env:
 jobs:
   build:
     timeout-minutes: ${{ inputs.timeout_minutes }}
-    runs-on: ${{ fromJson(inputs.runs_on_labels) }}
+    runs-on: ubuntu-latest
 
     outputs:
       input_step_key: ${{ steps.var.outputs.input_step_key }}
